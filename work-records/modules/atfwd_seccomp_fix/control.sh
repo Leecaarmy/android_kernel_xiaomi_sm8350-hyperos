@@ -13,6 +13,10 @@ GNSS_SKIP=ro.gps.loc_sys_service.skip
 GNSS_RC_HASH=bdb98db727c2da512e5179e6aab20ad73cf53ca1fe6227f176fcf2540016adff
 GNSS_BIN_HASH=aa67db15dcaa35c498f22e19234c8052c64c61b0562bb9c1208392ef62929ce1
 GNSS_MANIFEST_HASH=a2febcc396f453bdabfe60f8adc9b0bc89b110845b3bd4b0c582ce35054a5f4e
+TCM_RULE="$MODDIR/sepolicy.rule"
+TCM_RULE_TEXT='allow platform_app_36 vendor_dpmtcm_socket sock_file write;
+allow bluetooth vendor_dpmtcm_socket sock_file write;
+allow joyose_app vendor_dpmtcm_socket sock_file write;'
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 flag() {
@@ -47,7 +51,7 @@ lock() {
     printf '%s\n' "$boot_id" > "$STATE/lock_boot"
 }
 status() {
-    printf 'atfwd_enabled=%s\ntraced_enabled=%s\n' "$(flag atfwd)" "$(flag traced)"
+    printf 'atfwd_enabled=%s\ntraced_enabled=%s\ntcm_enabled=%s\n' "$(flag atfwd)" "$(flag traced)" "$(flag tcm)"
     active=0
     grep -q '^gettid: 1$' /vendor/etc/seccomp_policy/atfwd@2.0.policy && active=1
     printf 'atfwd_active=%s\natfwd_service=%s\natfwd_pid=%s\n' "$active" "$(getprop init.svc.vendor.atfwd)" "$(getprop init.svc_debug_pid.vendor.atfwd)"
@@ -57,6 +61,12 @@ status() {
     if gnss_owned && [ "$(getprop "$GNSS_SKIP")" = 1 ] && [ "$(getprop init.svc.loc_sys_service)" = stopped ]; then gnss_active=1; fi
     printf 'gnss_enabled=%s\ngnss_active=%s\ngnss_skip=%s\n' "$(flag gnss)" "$gnss_active" "$(getprop "$GNSS_SKIP")"
     printf 'gnss_aux_service=%s\ngnss_aux_pid=%s\ngnss_service=%s\ngnss_pid=%s\n' "$(getprop init.svc.loc_sys_service)" "$(getprop init.svc_debug_pid.loc_sys_service)" "$(getprop init.svc.gnss_service)" "$(getprop init.svc_debug_pid.gnss_service)"
+    tcm_rule=0
+    [ -f "$TCM_RULE" ] && [ "$(cat "$TCM_RULE" 2>/dev/null)" = "$TCM_RULE_TEXT" ] && tcm_rule=1
+    tcm_active=0
+    [ "$(cat "$STATE/tcm_boot" 2>/dev/null)" = "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" ] && tcm_active=$(cat "$STATE/tcm_loaded" 2>/dev/null)
+    case "$tcm_active" in 1) ;; *) tcm_active=0 ;; esac
+    printf 'tcm_rule=%s\ntcm_active=%s\n' "$tcm_rule" "$tcm_active"
     printf 'device=%s\nandroid=%s\nrom=%s\nkernel=%s\n' "$(getprop ro.product.device)" "$(getprop ro.build.version.release)" "$(getprop ro.build.version.incremental)" "$(uname -r)"
     printf 'checked=%s\n' "$(date '+%H:%M:%S')"
 }
@@ -181,6 +191,36 @@ apply_gnss() {
         note 'GNSS：处理已关闭，恢复本次开机原状态，AIDL 错误可能重新出现。'
     fi
 }
+check_tcm() {
+    [ "$(getprop ro.build.version.incremental)" = OS4.0.0.26.XKACNXM ] || fail 'ROM 版本不在 TCM 修复适配范围。'
+    [ "$(getenforce 2>/dev/null)" = Enforcing ] || fail 'SELinux 不是 Enforcing，未应用 TCM 修复。'
+    [ -e /dev/socket/tcm ] || fail '未找到 /dev/socket/tcm，未应用 TCM 修复。'
+    ls -Z /dev/socket/tcm 2>/dev/null | grep -Fq 'vendor_dpmtcm_socket' || fail 'TCM Socket 标签已变化，需要重新分析。'
+    pidof dpmd >/dev/null 2>&1 || fail 'dpmd 未运行，未应用 TCM 修复。'
+    dumpsys package com.miui.passwords 2>/dev/null | grep -Fq 'com.miui.passwords' || fail 'MiuiPasswords 未安装，未应用 TCM 修复。'
+}
+prepare_tcm() {
+    if [ "$(flag tcm)" = 1 ]; then
+        check_tcm
+        if [ -e "$TCM_RULE" ] && [ "$(cat "$TCM_RULE" 2>/dev/null)" != "$TCM_RULE_TEXT" ]; then
+            fail '发现非本模块的 sepolicy.rule 内容，未覆盖。'
+        fi
+        if [ ! -e "$TCM_RULE" ]; then
+            printf '%s\n' "$TCM_RULE_TEXT" > "$TCM_RULE" && chmod 0644 "$TCM_RULE" || fail '创建 TCM 策略失败。'
+            note 'TCM：已准备 3 条已确认的 Socket 写入规则，下次开机生效。'
+        fi
+    elif [ -e "$TCM_RULE" ]; then
+        [ "$(cat "$TCM_RULE" 2>/dev/null)" = "$TCM_RULE_TEXT" ] || fail 'sepolicy.rule 不是本模块生成，未删除。'
+        rm -f "$TCM_RULE" || fail '撤销 TCM 策略失败。'
+        note 'TCM：已移除本模块策略，下次开机恢复 ROM 原策略。'
+    fi
+}
+mark_tcm_boot() {
+    loaded=0
+    [ -f "$TCM_RULE" ] && [ "$(cat "$TCM_RULE" 2>/dev/null)" = "$TCM_RULE_TEXT" ] && loaded=1
+    save "$STATE/tcm_boot" "$(cat /proc/sys/kernel/random/boot_id)" || fail '保存 TCM 开机状态失败。'
+    save "$STATE/tcm_loaded" "$loaded" || fail '保存 TCM 策略状态失败。'
+}
 prepare_atfwd() {
     if [ "$(flag atfwd)" = 0 ]; then
         # 挂载前移除本模块的单个覆盖文件，恢复真正的 vendor 策略。
@@ -215,6 +255,16 @@ diagnostics() {
         }
         END { printf "atfwd_errors=%d\ntraced_errors=%d\ngnss_errors=%d\n", a, t, g }
     ' || fail '解析日志失败，无法判断是否需要开启。'
+    now=$(cut -d. -f1 /proc/uptime 2>/dev/null) || fail '读取运行时间失败，无法检查 TCM 日志。'
+    cutoff=$((now - 300))
+    dmesg -S -r -s 65536 2>/dev/null | awk -v cutoff="$cutoff" '
+        {
+            line=$0; sub(/^<[0-9]+>/, "", line); ts=line
+            sub(/^\[[ \t]*/, "", ts); sub(/\..*$/, "", ts)
+            if ((ts + 0) >= cutoff && line ~ /TcmReceiver/ && line ~ /vendor_dpmtcm_socket/) n++
+        }
+        END { printf "tcm_errors=%d\n", n + 0 }
+    ' || fail '读取内核审计日志失败，无法判断 TCM 是否需要开启。'
     printf 'diagnostics_checked=%s\n' "$(date '+%H:%M:%S')"
 }
 
@@ -228,6 +278,8 @@ case "$1" in
         prepare_atfwd
         apply_traced boot
         apply_gnss boot
+        mark_tcm_boot
+        prepare_tcm
         ;;
     apply)
         guard; lock
@@ -235,15 +287,19 @@ case "$1" in
         apply_gnss live
         ;;
     set)
-        case "$2:$3" in atfwd:0|atfwd:1|traced:0|traced:1|gnss:0|gnss:1) ;; *) fail '开关参数无效。' ;; esac
+        case "$2:$3" in atfwd:0|atfwd:1|traced:0|traced:1|gnss:0|gnss:1|tcm:0|tcm:1) ;; *) fail '开关参数无效。' ;; esac
         guard; lock
         if [ "$2" = traced ]; then
             # 在改变用户选择前先验证通道，避免失败时留下错误配置。
             case "$(getprop "$RELAY")" in ''|'vsock://-1:2010') ;; *) fail '通道配置已变化，未保存开关。' ;; esac
         fi
         if [ "$2:$3" = gnss:1 ]; then check_gnss live; fi
+        if [ "$2:$3" = tcm:1 ]; then check_tcm; fi
         save "$CONFIG/${2}_enabled" "$3" || fail '保存开关失败。'
-        if [ "$2" = gnss ]; then
+        if [ "$2" = tcm ]; then
+            prepare_tcm
+            printf 'TCM 开关已保存；SELinux 规则将在下次开机加载，请重启后验证。\n'
+        elif [ "$2" = gnss ]; then
             apply_gnss live
             printf 'GNSS 开关已保存并应用；请检查状态并进行室外定位测试。\n'
         elif [ "$2" = traced ]; then

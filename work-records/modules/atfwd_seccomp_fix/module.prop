@@ -1,6 +1,6 @@
 id=atfwd_seccomp_fix
 name=系统服务稳定性修复
-version=2.4.1-test
-versionCode=8
+version=2.5.0-test
+versionCode=9
 author=Dynamic
-description=统一处理 ATFWD 重启、Perfetto 虚拟机通道和 GNSS 缺失 AIDL 请求，提供三个中文独立开关及只读内核日志；GNSS 新安装默认关闭，适配 mars / Android 17。
+description=统一处理 ATFWD 重启、Perfetto 虚拟机通道、GNSS 缺失 AIDL 请求和 TCM Socket SELinux 拒绝，提供四个中文独立开关及只读内核日志；GNSS、TCM 新安装默认关闭，适配 mars / Android 17。
