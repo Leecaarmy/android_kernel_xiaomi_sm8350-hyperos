@@ -4,6 +4,17 @@
 
 # Dynamic Kernel for SM8350
 
+## 最新版本下载
+
+[下载最新 Release（AK3 内核包与统一修复模块）](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/latest)
+
+当前发布标签：`20261006-2324`；内核：`5.4.302-Dynamic-gb0773c7`。
+
+- [下载 AK3 内核包](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/download/20261006-2324/AK3-5.4.302-Dynamic-gb0773c7-20261006-2324.zip)
+- [下载 KernelSU 系统服务修复模块（2.5.0-test）](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/download/20261006-2324/KernelSU-atfwd_seccomp_fix-2.5.0-test-20261006-2324.zip)
+
+模块在 KernelSU 管理器中单独安装，用于处理无法在本仓库内核源码中修复的系统服务问题；不会随 AK3 安装。适配范围、开关生效时间、校验值和测试边界见 Release 说明；该模块版本不含尚未提交的 RTC 修复。
+
 ## 项目用途
 
 本仓库用于维护 Xiaomi SM8350 平台的 Linux 5.4.302 arm64 内核，针对 Xiaomi 11 Pro/11 Ultra 的 Android/HyperOS 运行环境提供源码、配置、构建校验和 AK3 内核包模板。
