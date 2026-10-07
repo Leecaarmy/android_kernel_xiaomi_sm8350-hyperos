@@ -14,14 +14,14 @@
     <header>
       <p class="eyebrow">DYNAMIC · 2.6.0 测试版</p>
       <h1>系统服务修复</h1>
-      <p class="subtitle">五项处理，独立控制。</p>
+      <p class="subtitle">新安装全部关闭。请查看各项错误日志和建议，自行选择开启；升级保留已有选择。</p>
       <p id="device" class="device">小米 11 Pro · Android 17 / HyperOS 4</p>
     </header>
 
     <div id="message" class="message" role="status" aria-live="polite">正在读取手机状态…</div>
 
     <section class="card" aria-labelledby="atfwd-title">
-      <div class="card-heading"><span class="number">01</span><span class="timing">下次开机生效</span></div>
+      <div class="card-heading"><span class="number">01</span><span class="timing">下次开机生效 · 默认关闭</span></div>
       <h2 id="atfwd-title">ATFWD 服务修复</h2>
       <p>补充服务需要的 gettid 权限，避免它被安全策略拦截后反复退出。</p>
       <label class="switch-row" for="atfwd-toggle">
@@ -36,7 +36,7 @@
     </section>
 
     <section class="card" aria-labelledby="traced-title">
-      <div class="card-heading"><span class="number">02</span><span class="timing">即时应用</span></div>
+      <div class="card-heading"><span class="number">02</span><span class="timing">即时应用 · 默认关闭</span></div>
       <h2 id="traced-title">性能追踪服务修复</h2>
       <p>移除不适用的虚拟机通道，让 traced 使用手机本地通道，保留性能追踪功能。</p>
       <label class="switch-row" for="traced-toggle">
@@ -51,7 +51,7 @@
     </section>
 
     <section class="card" aria-labelledby="gnss-title">
-      <div class="card-heading"><span class="number">03</span><span class="timing">即时应用</span></div>
+      <div class="card-heading"><span class="number">03</span><span class="timing">即时应用 · 默认关闭</span></div>
       <h2 id="gnss-title">GNSS 异常请求抑制</h2>
       <p>使用 ROM 自带的跳过属性，停止 loc_sys_service 对缺失 AIDL 接口的重复请求。保留原有 HIDL 定位服务；此处理不会补齐缺失接口。</p>
       <label class="switch-row" for="gnss-toggle">
@@ -69,7 +69,7 @@
     </section>
 
     <section class="card" aria-labelledby="tcm-title">
-      <div class="card-heading"><span class="number">04</span><span class="timing">下次开机生效</span></div>
+      <div class="card-heading"><span class="number">04</span><span class="timing">下次开机生效 · 默认关闭</span></div>
       <h2 id="tcm-title">MiuiPasswords TCM Socket 修复</h2>
       <p>只允许 MiuiPasswords 向现有 TCM Socket 写入，减少重复 SELinux 拒绝和 audit 日志洪泛；不关闭 SELinux。</p>
       <label class="switch-row" for="tcm-toggle">

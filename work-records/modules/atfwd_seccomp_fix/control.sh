@@ -24,7 +24,7 @@ allow system_suspend sysfs_rtc file read;'
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 flag() {
     value=$(cat "$CONFIG/${1}_enabled" 2>/dev/null)
-    case "$value" in 0|1) printf '%s' "$value" ;; *) if [ "$1" = gnss ] || [ "$1" = suspend ]; then printf 0; else printf 1; fi ;; esac
+    case "$value" in 0|1) printf '%s' "$value" ;; *) printf 0 ;; esac
 }
 save() {
     printf '%s\n' "$2" > "$1.tmp" && chmod 0600 "$1.tmp" && mv -f "$1.tmp" "$1"
@@ -87,6 +87,8 @@ kernel_logs() {
     dmesg -S -r -s 65536 | tail -c 65536 | sed -n '/^<[0-9][0-9]*>/,$p' | tail -n 400 || fail '读取内核日志失败，请确认 KernelSU root 权限。'
 }
 apply_traced() {
+    # 从未启用过修复时保持原状，不覆盖其他组件设置的通道。
+    if [ "$(flag traced)" = 0 ] && [ ! -f "$STATE/relay_original" ]; then return 0; fi
     [ -x "$RESETPROP" ] || fail '现有 resetprop 不可用，未安装任何新工具。'
     current=$(getprop "$RELAY")
     # 只处理已确认的通道。ROM 更新后出现其他配置时不擅自删除。
