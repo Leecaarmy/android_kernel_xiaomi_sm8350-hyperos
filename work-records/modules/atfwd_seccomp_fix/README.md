@@ -2,7 +2,7 @@
 
 沿用原模块 ID `atfwd_seccomp_fix`，适配小米 11 Pro（mars）、Android 17 / HyperOS `OS4.0.0.26.XKACNXM`、内核 `5.4.302-Dynamic-g1015467` 和当前 KernelSU/Hybrid Mount 环境。
 
-## 四个独立开关
+## 五个独立开关
 
 | 功能 | 开启时 | 关闭时 | 生效时间 |
 | --- | --- | --- | --- |
@@ -10,8 +10,9 @@
 | 性能追踪服务修复 | 删除 `traced.relay_producer_port`，保留本地 Unix Socket | 恢复 `/product/etc/build.prop` 中的原值 | 即时；必要时仅重启 traced |
 | GNSS 异常请求抑制 | 设置 `ro.gps.loc_sys_service.skip=1`，仅停止重复请求缺失 AIDL 接口的 `loc_sys_service` | 恢复当前开机原属性；仅恢复原来运行或被启动规则跳过的辅助服务 | 即时；开机早期只设置属性，后期补查服务 |
 | MiuiPasswords TCM Socket 修复 | 仅增加 3 个已确认调用域向现有 `vendor_dpmtcm_socket` 写入的 SELinux 规则 | 删除本模块生成的规则；不关闭 SELinux | 下次开机加载 |
+| `system_suspend` RTC 读取权限 | 允许 `system_suspend` 读取 `sysfs_rtc` 的 RTC 唤醒统计 | 删除本模块生成的读取规则；当前开机策略需重启后撤销 | 即时应用；下次开机持久化 |
 
-新安装 ATFWD、traced 默认开启，GNSS、TCM 默认关闭；升级保留四个开关的用户选择。开关保存于模块 `config` 目录，WebUI 区分选择与当前生效状态。关闭处理可能让原错误重新出现，页面关闭操作需要确认。
+ATFWD、traced 新安装默认开启；GNSS、TCM、RTC 默认关闭。升级保留已有合法选择，RTC 新增配置为关闭。开关保存于模块 config 目录，WebUI 区分选择与当前生效状态。关闭已生效的处理可能使原错误重新出现，页面关闭操作需要确认。
 
 ### TCM Socket 处理边界（2.5.0-test）
 
@@ -24,6 +25,20 @@ allow joyose_app vendor_dpmtcm_socket sock_file write;
 ```
 
 规则写入模块目录后仅在下次开机由 KernelSU 加载；关闭时只删除内容完全匹配的本模块规则。当前开机的 SELinux 策略不会被动态修改，不关闭 SELinux，不放宽其他权限。WebUI 在 TCM 关闭时读取最近五分钟内的内核快照，发现对应拒绝才建议开启。
+
+### `system_suspend` RTC 处理边界（2.6.0-test）
+
+当前 ROM 的 `system_suspend` 服务运行在 `u:r:system_suspend:s0`，RTC 唤醒统计节点标记为 `sysfs_rtc`。日志确认它读取 `name`、`active_count`、`last_change_ms`、`max_time_ms`、`total_time_ms`、`active_time_ms`、`event_count` 等文件时被 SELinux 拒绝，造成 `audit_lost` 和 `audit: rate limit exceeded`。
+
+此开关只增加以下最小文件读取权限：
+
+```te
+allow system_suspend sysfs_rtc file getattr;
+allow system_suspend sysfs_rtc file open;
+allow system_suspend sysfs_rtc file read;
+```
+
+规则不包含写入、创建、删除、重标记或其他 RTC/系统权限。开启时模块先校验 `mars`、Android 17、SELinux Enforcing、`system_suspend` 服务和 `sysfs_rtc` RTC 节点，再通过当前 KernelSU 的 `ksud sepolicy patch` 实时应用，并把同一规则写入模块策略供下次开机加载。关闭只能撤销下次开机的模块规则，当前开机已经加载的 SELinux 允许项需要重启后恢复。
 
 ### GNSS 处理边界（2.3-test）
 
@@ -73,13 +88,14 @@ WebUI 随模块离线提供，使用 KernelSU 原生 root 桥接。普通浏览�
 - 仅撤销 traced：在 WebUI 关闭“性能追踪服务修复”。它会恢复 ROM 原配置，可能重新触发每 5 秒重启。
 - 仅撤销 ATFWD：关闭对应开关，用户自行重启后生效，可能重新触发 SIGSYS。
 - 仅撤销 GNSS：关闭“GNSS 异常请求抑制”；恢复当前开机原属性与辅助服务状态，缺失 AIDL 请求可能重新出现。
-- 仅撤销 TCM：关闭“MiuiPasswords TCM Socket 修复”并重启；下次开机不再加载本模块规则，原拒绝日志可能重新出现。
+- 仅撤销 TCM：关闭“MiuiPasswords TCM Socket 修复”并重启；下次开机不再加载本模块 TCM 规则，原拒绝日志可能重新出现。
+- 仅撤销 RTC：关闭“system_suspend RTC 读取权限”并重启；当前开机已加载的允许项不会由模块伪造撤销，重启后恢复 ROM 原策略。
 - 撤销整个模块：在 KernelSU 禁用模块，用户自行重启后，原系统属性和 vendor 文件恢复。
 - 返回扩展前的版本：原备份包是文件快照，不是带完整安装校验的安装包；还原时需要同时恢复 `vendor_configs_file` 标签，并处理新增脚本和配置，不直接安装该快照包。
 
 ## 验收
 
-1. 两项修复开启时，ATFWD PID 不变且 Seccomp 保持开启，traced PID 稳定且属性为空。
+1. ATFWD、traced 修复开启时，ATFWD PID 不变且 Seccomp 保持开启，traced PID 稳定且属性为空。
 2. ATFWD 切换仅保存选择，不改变当前 policy、服务 PID 或 traced 属性。
 3. traced 关闭恢复原属性，重新开启后恢复正常；不影响 ATFWD。
 4. 无效命令/参数不修改配置；并发操作使用短期锁。
@@ -87,5 +103,6 @@ WebUI 随模块离线提供，使用 KernelSU 原生 root 桥接。普通浏览�
 6. 重启持久化需要单独实机验证；未经重启验证不声称已完成这一项。
 7. GNSS 开启后辅助服务停止、跳过属性为 `1`，新日志中不再出现该 AIDL 请求；关闭后可恢复，原定位服务 PID 不变。室外实际定位另行验证。
 8. TCM 开启后必须重启；确认规则已加载、`TcmReceiver` 拒绝停止、`audit_lost` 不再快速增长，且 SELinux 仍为 `Enforcing`。
+9. RTC 修复开启后，`system_suspend` 的 `sysfs_rtc` AVC 拒绝停止，`dumpsys suspend_control_internal` 能读取 RTC 唤醒统计，SELinux 仍为 `Enforcing`；关闭后重启，原权限状态恢复。
 
-本模块处理 ATFWD、traced、GNSS 无效请求和已确认的 TCM Socket 拒绝，不代表缺失的 GNSS AIDL 已实现、millet 等其他问题已修复，也不保证耗电问题已解决。
+本模块处理 ATFWD、traced、GNSS 无效请求、已确认的 TCM Socket 拒绝和 `system_suspend` RTC 读取权限，不代表缺失的 GNSS AIDL 已实现、millet 等其他问题已修复，也不保证耗电问题已解决。

@@ -17,11 +17,14 @@ TCM_RULE="$MODDIR/sepolicy.rule"
 TCM_RULE_TEXT='allow platform_app_36 vendor_dpmtcm_socket sock_file write;
 allow bluetooth vendor_dpmtcm_socket sock_file write;
 allow joyose_app vendor_dpmtcm_socket sock_file write;'
+SUSPEND_RULE_TEXT='allow system_suspend sysfs_rtc file getattr;
+allow system_suspend sysfs_rtc file open;
+allow system_suspend sysfs_rtc file read;'
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 flag() {
     value=$(cat "$CONFIG/${1}_enabled" 2>/dev/null)
-    case "$value" in 0|1) printf '%s' "$value" ;; *) if [ "$1" = gnss ]; then printf 0; else printf 1; fi ;; esac
+    case "$value" in 0|1) printf '%s' "$value" ;; *) if [ "$1" = gnss ] || [ "$1" = suspend ]; then printf 0; else printf 1; fi ;; esac
 }
 save() {
     printf '%s\n' "$2" > "$1.tmp" && chmod 0600 "$1.tmp" && mv -f "$1.tmp" "$1"
@@ -51,7 +54,7 @@ lock() {
     printf '%s\n' "$boot_id" > "$STATE/lock_boot"
 }
 status() {
-    printf 'atfwd_enabled=%s\ntraced_enabled=%s\ntcm_enabled=%s\n' "$(flag atfwd)" "$(flag traced)" "$(flag tcm)"
+    printf 'atfwd_enabled=%s\ntraced_enabled=%s\ntcm_enabled=%s\nsuspend_enabled=%s\n' "$(flag atfwd)" "$(flag traced)" "$(flag tcm)" "$(flag suspend)"
     active=0
     grep -q '^gettid: 1$' /vendor/etc/seccomp_policy/atfwd@2.0.policy && active=1
     printf 'atfwd_active=%s\natfwd_service=%s\natfwd_pid=%s\n' "$active" "$(getprop init.svc.vendor.atfwd)" "$(getprop init.svc_debug_pid.vendor.atfwd)"
@@ -62,11 +65,17 @@ status() {
     printf 'gnss_enabled=%s\ngnss_active=%s\ngnss_skip=%s\n' "$(flag gnss)" "$gnss_active" "$(getprop "$GNSS_SKIP")"
     printf 'gnss_aux_service=%s\ngnss_aux_pid=%s\ngnss_service=%s\ngnss_pid=%s\n' "$(getprop init.svc.loc_sys_service)" "$(getprop init.svc_debug_pid.loc_sys_service)" "$(getprop init.svc.gnss_service)" "$(getprop init.svc_debug_pid.gnss_service)"
     tcm_rule=0
-    [ -f "$TCM_RULE" ] && [ "$(cat "$TCM_RULE" 2>/dev/null)" = "$TCM_RULE_TEXT" ] && tcm_rule=1
+    [ -f "$TCM_RULE" ] && [ "$(grep -Fc 'allow platform_app_36 vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow bluetooth vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow joyose_app vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && tcm_rule=1
     tcm_active=0
     [ "$(cat "$STATE/tcm_boot" 2>/dev/null)" = "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" ] && tcm_active=$(cat "$STATE/tcm_loaded" 2>/dev/null)
     case "$tcm_active" in 1) ;; *) tcm_active=0 ;; esac
     printf 'tcm_rule=%s\ntcm_active=%s\n' "$tcm_rule" "$tcm_active"
+    suspend_rule=0
+    [ -f "$TCM_RULE" ] && [ "$(grep -Fc 'allow system_suspend sysfs_rtc file ' "$TCM_RULE" 2>/dev/null)" = 3 ] && suspend_rule=1
+    suspend_active=0
+    [ "$(cat "$STATE/suspend_boot" 2>/dev/null)" = "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" ] && suspend_active=$(cat "$STATE/suspend_loaded" 2>/dev/null)
+    case "$suspend_active" in 1) ;; *) suspend_active=0 ;; esac
+    printf 'suspend_rule=%s\nsuspend_active=%s\n' "$suspend_rule" "$suspend_active"
     printf 'device=%s\nandroid=%s\nrom=%s\nkernel=%s\n' "$(getprop ro.product.device)" "$(getprop ro.build.version.release)" "$(getprop ro.build.version.incremental)" "$(uname -r)"
     printf 'checked=%s\n' "$(date '+%H:%M:%S')"
 }
@@ -199,27 +208,71 @@ check_tcm() {
     pidof dpmd >/dev/null 2>&1 || fail 'dpmd 未运行，未应用 TCM 修复。'
     dumpsys package com.miui.passwords 2>/dev/null | grep -Fq 'com.miui.passwords' || fail 'MiuiPasswords 未安装，未应用 TCM 修复。'
 }
-prepare_tcm() {
-    if [ "$(flag tcm)" = 1 ]; then
-        check_tcm
-        if [ -e "$TCM_RULE" ] && [ "$(cat "$TCM_RULE" 2>/dev/null)" != "$TCM_RULE_TEXT" ]; then
-            fail '发现非本模块的 sepolicy.rule 内容，未覆盖。'
+
+check_suspend() {
+    [ "$(getprop ro.product.device)" = mars ] || fail '设备不在 RTC 权限修复适配范围。'
+    [ "$(getprop ro.build.version.release)" = 17 ] || fail 'Android 版本不在 RTC 权限修复适配范围。'
+    [ "$(getenforce 2>/dev/null)" = Enforcing ] || fail 'SELinux 不是 Enforcing，未应用 RTC 权限修复。'
+    ps -AZ 2>/dev/null | grep -Fq 'u:r:system_suspend:s0' || fail 'system_suspend 服务未运行，未应用 RTC 权限修复。'
+    found=0
+    for wakeup in /sys/class/rtc/rtc*/wakeup*; do
+        [ -d "$wakeup" ] || continue
+        ls -Zd "$wakeup" 2>/dev/null | grep -Fq 'sysfs_rtc' || continue
+        [ -r "$wakeup/name" ] && found=1
+    done
+    [ "$found" = 1 ] || fail '未找到 sysfs_rtc 的 RTC 唤醒统计节点。'
+}
+
+policy_expected() {
+    [ "$(flag tcm)" = 1 ] && printf '%s\n' "$TCM_RULE_TEXT"
+    [ "$(flag suspend)" = 1 ] && printf '%s\n' "$SUSPEND_RULE_TEXT"
+}
+
+policy_is_owned() {
+    current=$1
+    [ -z "$current" ] && return 0
+    [ "$current" = "$TCM_RULE_TEXT" ] && return 0
+    [ "$current" = "$SUSPEND_RULE_TEXT" ] && return 0
+    [ "$current" = "$(printf '%s\n%s' "$TCM_RULE_TEXT" "$SUSPEND_RULE_TEXT")" ] && return 0
+    [ "$current" = "$(printf '%s\n%s' "$SUSPEND_RULE_TEXT" "$TCM_RULE_TEXT")" ] && return 0
+    return 1
+}
+
+prepare_policy() {
+    [ "$(flag tcm)" = 1 ] && check_tcm
+    [ "$(flag suspend)" = 1 ] && check_suspend
+    current=$(cat "$TCM_RULE" 2>/dev/null)
+    policy_is_owned "$current" || fail '发现非本模块生成的 sepolicy.rule 内容，未覆盖。'
+    expected=$(policy_expected)
+    if [ "$current" != "$expected" ]; then
+        if [ -z "$expected" ]; then
+            rm -f "$TCM_RULE" || fail '撤销模块策略失败。'
+        else
+            printf '%s\n' "$expected" > "$TCM_RULE.tmp" && chmod 0644 "$TCM_RULE.tmp" && mv -f "$TCM_RULE.tmp" "$TCM_RULE" || fail '准备模块策略失败。'
         fi
-        if [ ! -e "$TCM_RULE" ]; then
-            printf '%s\n' "$TCM_RULE_TEXT" > "$TCM_RULE" && chmod 0644 "$TCM_RULE" || fail '创建 TCM 策略失败。'
-            note 'TCM：已准备 3 条已确认的 Socket 写入规则，下次开机生效。'
-        fi
-    elif [ -e "$TCM_RULE" ]; then
-        [ "$(cat "$TCM_RULE" 2>/dev/null)" = "$TCM_RULE_TEXT" ] || fail 'sepolicy.rule 不是本模块生成，未删除。'
-        rm -f "$TCM_RULE" || fail '撤销 TCM 策略失败。'
-        note 'TCM：已移除本模块策略，下次开机恢复 ROM 原策略。'
+        note "策略：已根据 TCM 和 system_suspend 开关更新规则。"
     fi
 }
-mark_tcm_boot() {
-    loaded=0
-    [ -f "$TCM_RULE" ] && [ "$(cat "$TCM_RULE" 2>/dev/null)" = "$TCM_RULE_TEXT" ] && loaded=1
+
+mark_policy_boot() {
+    tcm_loaded=0
+    suspend_loaded=0
+    [ -f "$TCM_RULE" ] && [ "$(grep -Fc 'allow platform_app_36 vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow bluetooth vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow joyose_app vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && tcm_loaded=1
+    [ -f "$TCM_RULE" ] && [ "$(grep -Fc 'allow system_suspend sysfs_rtc file getattr;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow system_suspend sysfs_rtc file open;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow system_suspend sysfs_rtc file read;' "$TCM_RULE" 2>/dev/null)" = 1 ] && suspend_loaded=1
     save "$STATE/tcm_boot" "$(cat /proc/sys/kernel/random/boot_id)" || fail '保存 TCM 开机状态失败。'
-    save "$STATE/tcm_loaded" "$loaded" || fail '保存 TCM 策略状态失败。'
+    save "$STATE/tcm_loaded" "$tcm_loaded" || fail '保存 TCM 策略状态失败。'
+    save "$STATE/suspend_boot" "$(cat /proc/sys/kernel/random/boot_id)" || fail '保存 RTC 权限开机状态失败。'
+    save "$STATE/suspend_loaded" "$suspend_loaded" || fail '保存 RTC 权限状态失败。'
+}
+
+apply_suspend_live() {
+    [ "$(flag suspend)" = 1 ] || return 0
+    check_suspend
+    /data/adb/ksud sepolicy check "$SUSPEND_RULE_TEXT" >/dev/null 2>&1 || fail 'RTC 权限规则格式不受当前 KernelSU 支持。'
+    /data/adb/ksud sepolicy patch "$SUSPEND_RULE_TEXT" >/dev/null 2>&1 || fail '实时应用 RTC 权限规则失败。'
+    save "$STATE/suspend_boot" "$(cat /proc/sys/kernel/random/boot_id)" || fail '保存 RTC 权限开机状态失败。'
+    save "$STATE/suspend_loaded" 1 || fail '保存 RTC 权限状态失败。'
+    note 'system_suspend：已实时允许读取 sysfs_rtc 的 RTC 唤醒统计。'
 }
 prepare_atfwd() {
     if [ "$(flag atfwd)" = 0 ]; then
@@ -255,16 +308,25 @@ diagnostics() {
         }
         END { printf "atfwd_errors=%d\ntraced_errors=%d\ngnss_errors=%d\n", a, t, g }
     ' || fail '解析日志失败，无法判断是否需要开启。'
-    now=$(cut -d. -f1 /proc/uptime 2>/dev/null) || fail '读取运行时间失败，无法检查 TCM 日志。'
+    now=$(cut -d. -f1 /proc/uptime 2>/dev/null) || fail '读取运行时间失败，无法检查内核日志。'
     cutoff=$((now - 300))
-    dmesg -S -r -s 65536 2>/dev/null | awk -v cutoff="$cutoff" '
+    kernel_snapshot=$(dmesg -S -r -s 65536 2>/dev/null) || fail '读取内核审计日志失败，无法判断是否需要开启。'
+    printf '%s\n' "$kernel_snapshot" | awk -v cutoff="$cutoff" '
         {
             line=$0; sub(/^<[0-9]+>/, "", line); ts=line
             sub(/^\[[ \t]*/, "", ts); sub(/\..*$/, "", ts)
             if ((ts + 0) >= cutoff && line ~ /TcmReceiver/ && line ~ /vendor_dpmtcm_socket/) n++
         }
         END { printf "tcm_errors=%d\n", n + 0 }
-    ' || fail '读取内核审计日志失败，无法判断 TCM 是否需要开启。'
+    '
+    printf '%s\n' "$kernel_snapshot" | awk -v cutoff="$cutoff" '
+        {
+            line=$0; sub(/^<[0-9]+>/, "", line); ts=line
+            sub(/^\[[ \t]*/, "", ts); sub(/\..*$/, "", ts)
+            if ((ts + 0) >= cutoff && line ~ /scontext=u:r:system_suspend:s0/ && line ~ /tcontext=u:object_r:sysfs_rtc:s0/ && line ~ /denied/) n++
+        }
+        END { printf "suspend_errors=%d\n", n + 0 }
+    '
     printf 'diagnostics_checked=%s\n' "$(date '+%H:%M:%S')"
 }
 
@@ -278,8 +340,8 @@ case "$1" in
         prepare_atfwd
         apply_traced boot
         apply_gnss boot
-        mark_tcm_boot
-        prepare_tcm
+        prepare_policy
+        mark_policy_boot
         ;;
     apply)
         guard; lock
@@ -287,7 +349,7 @@ case "$1" in
         apply_gnss live
         ;;
     set)
-        case "$2:$3" in atfwd:0|atfwd:1|traced:0|traced:1|gnss:0|gnss:1|tcm:0|tcm:1) ;; *) fail '开关参数无效。' ;; esac
+        case "$2:$3" in atfwd:0|atfwd:1|traced:0|traced:1|gnss:0|gnss:1|tcm:0|tcm:1|suspend:0|suspend:1) ;; *) fail '开关参数无效。' ;; esac
         guard; lock
         if [ "$2" = traced ]; then
             # 在改变用户选择前先验证通道，避免失败时留下错误配置。
@@ -295,10 +357,19 @@ case "$1" in
         fi
         if [ "$2:$3" = gnss:1 ]; then check_gnss live; fi
         if [ "$2:$3" = tcm:1 ]; then check_tcm; fi
+        if [ "$2:$3" = suspend:1 ]; then check_suspend; fi
         save "$CONFIG/${2}_enabled" "$3" || fail '保存开关失败。'
         if [ "$2" = tcm ]; then
-            prepare_tcm
+            prepare_policy
             printf 'TCM 开关已保存；SELinux 规则将在下次开机加载，请重启后验证。\n'
+        elif [ "$2" = suspend ]; then
+            prepare_policy
+            if [ "$3" = 1 ]; then
+                apply_suspend_live
+                printf 'RTC 读取权限修复已保存并实时应用；请刷新状态后观察 system_suspend 日志。\n'
+            else
+                printf 'RTC 读取权限修复已关闭；当前开机策略无法撤销，重启后恢复。\n'
+            fi
         elif [ "$2" = gnss ]; then
             apply_gnss live
             printf 'GNSS 开关已保存并应用；请检查状态并进行室外定位测试。\n'

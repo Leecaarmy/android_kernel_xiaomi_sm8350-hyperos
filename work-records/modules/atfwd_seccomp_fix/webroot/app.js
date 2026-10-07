@@ -1,6 +1,6 @@
 'use strict';
 const byId = id => document.getElementById(id);
-const toggles = [byId('atfwd-toggle'), byId('traced-toggle'), byId('gnss-toggle'), byId('tcm-toggle')];
+const toggles = [byId('atfwd-toggle'), byId('traced-toggle'), byId('gnss-toggle'), byId('tcm-toggle'), byId('suspend-toggle')];
 let busy = false;
 let lastState;
 
@@ -28,7 +28,8 @@ function render(state) {
   byId('traced-toggle').checked = state.traced_enabled === '1';
   byId('gnss-toggle').checked = state.gnss_enabled === '1';
   byId('tcm-toggle').checked = state.tcm_enabled === '1';
-  ['atfwd', 'traced', 'gnss', 'tcm'].forEach(feature => {
+  byId('suspend-toggle').checked = state.suspend_enabled === '1';
+  ['atfwd', 'traced', 'gnss', 'tcm', 'suspend'].forEach(feature => {
     const node = byId(`${feature}-advice`);
     const wasHidden = node.hidden;
     node.hidden = state[`${feature}_enabled`] === '1';
@@ -47,6 +48,8 @@ function render(state) {
   byId('gnss-pending').hidden = state.gnss_enabled === state.gnss_active;
   paint('tcm-rule', state.tcm_active === '1' ? '当前已加载' : state.tcm_rule === '1' ? '已准备，下次开机加载' : '未准备，使用 ROM 原策略', state.tcm_active === '1');
   byId('tcm-pending').hidden = state.tcm_enabled === state.tcm_active;
+  paint('suspend-rule', state.suspend_active === '1' ? '当前已加载' : state.suspend_rule === '1' ? '已准备，下次开机加载' : '未准备，使用 ROM 原策略', state.suspend_active === '1');
+  byId('suspend-pending').hidden = state.suspend_enabled === state.suspend_active;
   byId('device').textContent = `${state.device} · Android ${state.android}`;
   ['rom', 'kernel', 'relay'].forEach(key => { byId(key).textContent = state[key] || '未设置'; });
   byId('master').textContent = state.traced_master === '1' ? '已开启' : `当前值：${state.traced_master || '未设置'}`;
@@ -60,7 +63,7 @@ async function refresh() {
     const index = line.indexOf('=');
     if (index >= 0) state[line.slice(0, index)] = line.slice(index + 1).trim();
   });
-  if (!['0', '1'].includes(state.atfwd_enabled) || !['0', '1'].includes(state.traced_enabled) || !['0', '1'].includes(state.gnss_enabled) || !['0', '1'].includes(state.tcm_enabled)) {
+  if (!['0', '1'].includes(state.atfwd_enabled) || !['0', '1'].includes(state.traced_enabled) || !['0', '1'].includes(state.gnss_enabled) || !['0', '1'].includes(state.tcm_enabled) || !['0', '1'].includes(state.suspend_enabled)) {
     throw new Error('模块状态格式异常，开关已暂停。');
   }
   render(state);
@@ -68,7 +71,7 @@ async function refresh() {
   byId('logs').textContent = (await exec(`${CONTROL} logs`)).trim() || '暂无操作记录';
 }
 async function checkAdvice(state) {
-  const disabled = ['atfwd', 'traced', 'gnss', 'tcm'].filter(feature => state[`${feature}_enabled`] === '0');
+  const disabled = ['atfwd', 'traced', 'gnss', 'tcm', 'suspend'].filter(feature => state[`${feature}_enabled`] === '0');
   if (!disabled.length) return;
   try {
     const output = await exec(`${CONTROL} diagnostics`);
@@ -102,7 +105,8 @@ function confirmOff(feature) {
     atfwd: '下次开机将不再放行 gettid，ATFWD 可能恢复崩溃重启。当前服务不受本次切换影响。',
     traced: '将立即恢复 ROM 的 vsock 配置并重启 traced，原来的重启循环可能再次出现。本地性能追踪可能不可用。',
     gnss: '将恢复本次开机的原跳过属性和辅助服务状态，不存在的 GNSS AIDL 接口请求可能再次出现。原有 HIDL 定位服务保持运行。',
-    tcm: '将移除本模块的 TCM Socket SELinux 规则，下次开机后原来的 TcmReceiver 拒绝日志可能再次出现。'
+    tcm: '将移除本模块的 TCM Socket SELinux 规则，下次开机后原来的 TcmReceiver 拒绝日志可能再次出现。',
+    suspend: '将移除下次开机的 system_suspend RTC 读取规则；当前开机已加载的规则需重启后撤销。'
   };
   byId('confirm-text').textContent = warnings[feature];
   return new Promise(resolve => {
@@ -133,6 +137,7 @@ byId('atfwd-toggle').addEventListener('change', event => setFeature('atfwd', eve
 byId('traced-toggle').addEventListener('change', event => setFeature('traced', event.target.checked));
 byId('gnss-toggle').addEventListener('change', event => setFeature('gnss', event.target.checked));
 byId('tcm-toggle').addEventListener('change', event => setFeature('tcm', event.target.checked));
+byId('suspend-toggle').addEventListener('change', event => setFeature('suspend', event.target.checked));
 byId('refresh').addEventListener('click', async () => {
   if (busy) return;
   busy = true;
