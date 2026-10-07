@@ -18,6 +18,7 @@
 | `2026-10-02-gnss-unified-module.md` | GNSS AIDL 客户端与 vendor HIDL 接口不匹配的分析、统一模块处理和回滚记录 | 非内核设备侧临时修复 |
 | `2026-10-07-system-suspend-rtc.md` | `system_suspend` 读取 `sysfs_rtc` 被 SELinux 拒绝的证据、统一模块最小规则和实机验证记录 | 非内核设备侧临时修复 |
 | `2026-10-07-module-default-off.md` | 统一模块新安装全部关闭、升级保留选择和日志建议边界，以及隔离验证结果 | 非内核模块行为修正 |
+| `2026-10-07-module-policy-status.md` | TCM/RTC 重启提示误判、真实权限查询、旧备份禁用和本地/实机验证记录 | 非内核模块状态修正 |
 | `modules/atfwd_seccomp_fix/` | 对应的 KernelSU 模块源码、五个独立开关、中文 WebUI、内核日志读取和只读诊断脚本 | 可审查的测试/回滚载荷 |
 
 ## 已记录的模块功能

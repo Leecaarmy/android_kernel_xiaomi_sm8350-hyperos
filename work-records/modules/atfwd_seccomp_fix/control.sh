@@ -35,6 +35,46 @@ note() {
 }
 # 避开 Android mksh 内置的 hash 别名，确保实际调用 SHA-256 校验。
 file_hash() { sha256sum "$1" 2>/dev/null | cut -d ' ' -f 1; }
+# access 是 SELinux 的权限查询接口；提交上下文只计算结果，不加载或修改策略。
+# 使用子 shell 独占描述符，失败返回 2，不能把无法检测当作权限未加载。
+policy_access() (
+    source=$1; target=$2; class=$3
+    shift 3
+    [ "$(getenforce 2>/dev/null)" = Enforcing ] || exit 2
+    class_id=$(cat "/sys/fs/selinux/class/$class/index" 2>/dev/null) || exit 2
+    case "$class_id" in ''|*[!0-9]*) exit 2 ;; esac
+    [ "$class_id" -ge 1 ] && [ "$#" -gt 0 ] || exit 2
+    mask=0
+    for permission in "$@"; do
+        index=$(cat "/sys/fs/selinux/class/$class/perms/$permission" 2>/dev/null) || exit 2
+        case "$index" in ''|*[!0-9]*) exit 2 ;; esac
+        [ "$index" -ge 1 ] && [ "$index" -le 32 ] || exit 2
+        mask=$((mask | (1 << (index - 1))))
+    done
+    [ -e /sys/fs/selinux/access ] || exit 2
+    exec 3<> /sys/fs/selinux/access 2>/dev/null || exit 2
+    printf '%s' "$source $target $class_id" >&3 || exit 2
+    response=$(cat <&3) || exit 2
+    set -- $response
+    [ "$#" -eq 6 ] || exit 2
+    case "$1" in ''|*[!0-9a-fA-F]*) exit 2 ;; esac
+    [ "${#1}" -le 8 ] || exit 2
+    [ $((0x$1 & mask)) -eq "$mask" ]
+)
+policy_active() (
+    result=0
+    case "$1" in
+        tcm)
+            for domain in platform_app_36 bluetooth joyose_app; do
+                policy_access "u:r:$domain:s0" u:object_r:vendor_dpmtcm_socket:s0 sock_file write
+                case "$?" in 0) ;; 1) [ "$result" = 0 ] && result=1 ;; *) result=2 ;; esac
+            done
+            exit "$result"
+            ;;
+        suspend) policy_access u:r:system_suspend:s0 u:object_r:sysfs_rtc:s0 file getattr open read ;;
+        *) exit 2 ;;
+    esac
+)
 guard() {
     [ "$(getprop ro.product.device)" = mars ] || fail '设备不在适配范围，未应用修复。'
     [ "$(getprop ro.build.version.release)" = 17 ] || fail 'Android 版本不在适配范围，未应用修复。'
@@ -66,16 +106,17 @@ status() {
     printf 'gnss_aux_service=%s\ngnss_aux_pid=%s\ngnss_service=%s\ngnss_pid=%s\n' "$(getprop init.svc.loc_sys_service)" "$(getprop init.svc_debug_pid.loc_sys_service)" "$(getprop init.svc.gnss_service)" "$(getprop init.svc_debug_pid.gnss_service)"
     tcm_rule=0
     [ -f "$TCM_RULE" ] && [ "$(grep -Fc 'allow platform_app_36 vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow bluetooth vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow joyose_app vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && tcm_rule=1
-    tcm_active=0
-    [ "$(cat "$STATE/tcm_boot" 2>/dev/null)" = "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" ] && tcm_active=$(cat "$STATE/tcm_loaded" 2>/dev/null)
-    case "$tcm_active" in 1) ;; *) tcm_active=0 ;; esac
-    printf 'tcm_rule=%s\ntcm_active=%s\n' "$tcm_rule" "$tcm_active"
+    # 启动脚本可能在服务未就绪时退出；旧开机标记不能证明当前权限状态。
+    tcm_active=0; tcm_verified=1
+    policy_active tcm
+    case "$?" in 0) tcm_active=1 ;; 1) ;; *) tcm_verified=0 ;; esac
+    printf 'tcm_rule=%s\ntcm_active=%s\ntcm_verified=%s\n' "$tcm_rule" "$tcm_active" "$tcm_verified"
     suspend_rule=0
     [ -f "$TCM_RULE" ] && [ "$(grep -Fc 'allow system_suspend sysfs_rtc file ' "$TCM_RULE" 2>/dev/null)" = 3 ] && suspend_rule=1
-    suspend_active=0
-    [ "$(cat "$STATE/suspend_boot" 2>/dev/null)" = "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" ] && suspend_active=$(cat "$STATE/suspend_loaded" 2>/dev/null)
-    case "$suspend_active" in 1) ;; *) suspend_active=0 ;; esac
-    printf 'suspend_rule=%s\nsuspend_active=%s\n' "$suspend_rule" "$suspend_active"
+    suspend_active=0; suspend_verified=1
+    policy_active suspend
+    case "$?" in 0) suspend_active=1 ;; 1) ;; *) suspend_verified=0 ;; esac
+    printf 'suspend_rule=%s\nsuspend_active=%s\nsuspend_verified=%s\n' "$suspend_rule" "$suspend_active" "$suspend_verified"
     printf 'device=%s\nandroid=%s\nrom=%s\nkernel=%s\n' "$(getprop ro.product.device)" "$(getprop ro.build.version.release)" "$(getprop ro.build.version.incremental)" "$(uname -r)"
     printf 'checked=%s\n' "$(date '+%H:%M:%S')"
 }

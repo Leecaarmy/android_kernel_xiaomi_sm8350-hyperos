@@ -12,7 +12,7 @@
 <body>
   <main>
     <header>
-      <p class="eyebrow">DYNAMIC · 2.6.0 测试版</p>
+      <p class="eyebrow">DYNAMIC · 2.6.1 测试版</p>
       <h1>系统服务修复</h1>
       <p class="subtitle">新安装全部关闭。请查看各项错误日志和建议，自行选择开启；升级保留已有选择。</p>
       <p id="device" class="device">小米 11 Pro · Android 17 / HyperOS 4</p>
@@ -78,8 +78,8 @@
         <span class="switch" aria-hidden="true"></span>
       </label>
       <p id="tcm-advice" class="pending" role="status" hidden></p>
-      <div class="status-row"><span>策略文件</span><strong id="tcm-rule">读取中</strong></div>
-      <p id="tcm-pending" class="pending" hidden>规则已变更，需重启后加载或撤销。</p>
+      <div class="status-row"><span>当前权限</span><strong id="tcm-rule">读取中</strong></div>
+      <p id="tcm-pending" class="pending" hidden></p>
     </section>
 
     <section class="card" aria-labelledby="suspend-title">
@@ -92,8 +92,8 @@
         <span class="switch" aria-hidden="true"></span>
       </label>
       <p id="suspend-advice" class="pending" role="status" hidden></p>
-      <div class="status-row"><span>策略文件</span><strong id="suspend-rule">读取中</strong></div>
-      <p id="suspend-pending" class="pending" hidden>开关与当前策略不一致，请刷新并按提示重启后确认。</p>
+      <div class="status-row"><span>当前权限</span><strong id="suspend-rule">读取中</strong></div>
+      <p id="suspend-pending" class="pending" hidden></p>
     </section>
 
     <div class="toolbar"><span id="checked">尚未读取</span><button id="refresh" type="button">刷新状态</button></div>

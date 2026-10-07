@@ -22,6 +22,35 @@ function paint(id, text, good) {
   node.classList.toggle('good', good);
   node.classList.toggle('warn', !good);
 }
+function renderPolicy(state, feature) {
+  const enabled = state[`${feature}_enabled`] === '1';
+  const active = state[`${feature}_active`] === '1';
+  const prepared = state[`${feature}_rule`] === '1';
+  const verified = state[`${feature}_verified`] === '1';
+  const pending = byId(`${feature}-pending`);
+  let hint = '';
+  let text;
+  if (!verified) {
+    text = '无法核实当前权限';
+    hint = '权限检测失败，请确认 root 权限并刷新；不能据此判断需要重启。';
+  } else if (active) {
+    text = enabled ? '当前权限已生效' : '关闭，当前权限仍允许';
+    if (!enabled) {
+      hint = prepared ? '开关已关闭，但模块规则仍存在，请检查配置。' : '本模块已关闭；当前权限可能尚未撤销，或由系统、其他模块提供。已重启后仍如此时，无需反复重启。';
+    } else if (!prepared) {
+      hint = '当前权限已允许，但本模块规则未准备，无法保证下次开机仍生效。';
+    }
+  } else if (enabled) {
+    text = prepared ? '当前权限未完整生效' : '规则未准备';
+    hint = prepared ? '规则已准备；刚启用时请重启，已重启仍如此请检查策略加载日志。' : '开关已开启，但模块规则未准备，请检查模块错误。';
+  } else {
+    text = '关闭，当前未授予权限';
+    if (prepared) hint = '开关已关闭，但模块规则仍存在，请检查配置。';
+  }
+  paint(`${feature}-rule`, text, verified && active && enabled);
+  pending.textContent = hint;
+  pending.hidden = !hint;
+}
 function render(state) {
   lastState = state;
   byId('atfwd-toggle').checked = state.atfwd_enabled === '1';
@@ -46,10 +75,8 @@ function render(state) {
   paint('gnss-service', serviceText(state.gnss_service, state.gnss_pid), state.gnss_service === 'running');
   byId('gnss-skip').textContent = state.gnss_skip || '未设置 / 空值';
   byId('gnss-pending').hidden = state.gnss_enabled === state.gnss_active;
-  paint('tcm-rule', state.tcm_active === '1' ? '当前已加载' : state.tcm_rule === '1' ? '已准备，下次开机加载' : '未准备，使用 ROM 原策略', state.tcm_active === '1');
-  byId('tcm-pending').hidden = state.tcm_enabled === state.tcm_active;
-  paint('suspend-rule', state.suspend_active === '1' ? '当前已加载' : state.suspend_rule === '1' ? '已准备，下次开机加载' : '未准备，使用 ROM 原策略', state.suspend_active === '1');
-  byId('suspend-pending').hidden = state.suspend_enabled === state.suspend_active;
+  renderPolicy(state, 'tcm');
+  renderPolicy(state, 'suspend');
   byId('device').textContent = `${state.device} · Android ${state.android}`;
   ['rom', 'kernel', 'relay'].forEach(key => { byId(key).textContent = state[key] || '未设置'; });
   byId('master').textContent = state.traced_master === '1' ? '已开启' : `当前值：${state.traced_master || '未设置'}`;

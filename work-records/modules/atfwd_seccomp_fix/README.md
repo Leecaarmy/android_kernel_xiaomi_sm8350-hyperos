@@ -42,6 +42,14 @@ allow system_suspend sysfs_rtc file read;
 
 规则不包含写入、创建、删除、重标记或其他 RTC/系统权限。开启时模块先校验 `mars`、Android 17、SELinux Enforcing、`system_suspend` 服务和 `sysfs_rtc` RTC 节点，再通过当前 KernelSU 的 `ksud sepolicy patch` 实时应用，并把同一规则写入模块策略供下次开机加载。关闭只能撤销下次开机的模块规则，当前开机已经加载的 SELinux 允许项需要重启后恢复。
 
+### TCM / RTC 状态核对（2.6.1-test）
+
+第 4、5 项状态直接通过现有 SELinux `access` 查询接口核对当前权限：TCM 检查三个调用域的 `sock_file write`，RTC 检查 `getattr/open/read`。查询只计算权限结果，不加载或修改策略，不修改配置和开关；不再依赖可能因启动检查中断而未更新的旧开机记录。
+
+检测成功且权限完整允许时显示“当前权限已生效”；权限缺失时区分规则已准备与未准备，已重启仍未生效则提示检查加载日志；接口、上下文或 root 权限检测失败时明确显示“无法核实”，不冒充待重启。关闭后仍允许的权限可能来自当前尚未撤销的策略、ROM 或其他模块，不能据此要求用户反复重启，也不能仅凭查询结果判断具体策略来源。
+
+模块备份应放在 KernelSU 活动模块目录之外；仅修改目录名为 `backup` 不会阻止其脚本执行。已有活动备份必须禁用并保留回滚记录，避免多份模块同时控制属性和服务。本版本没有改变策略加载顺序或权限范围。
+
 ### GNSS 处理边界（2.3-test）
 
 当前 `loc_sys_service` 等待 `vendor.qti.gnss.ILocAidlGnss/default`，vendor 实际提供旧 HIDL 接口。此开关抑制无效请求，不补齐 AIDL，也不保证该辅助服务的所有厂商扩展功能可用。保留 `/vendor/bin/hw/android.hardware.gnss@2.1-service-qti`（`gnss_service`），仍须用户进行室外搜星、连续导航和重启后验收。
