@@ -8,12 +8,12 @@
 
 [下载最新 Release（AK3 内核包与统一修复模块）](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/latest)
 
-当前发布标签：`20261008-2011`；内核：`5.4.302-Dynamic-ga4f8add`。
+当前发布标签：`20261008-2155`；内核：`5.4.302-Dynamic-gf1e6db0`。
 
-- [下载 AK3 内核包](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/download/20261008-2011/Dynamic-AK3-5.4.302-Dynamic-ga4f8add-20261008-2011.zip)
-- [下载 KernelSU 系统服务修复模块（2.6.2-test）](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/download/20261008-2011/KernelSU-atfwd_seccomp_fix-2.6.2-test-20261008-2011.zip)
+- [下载 AK3 内核包](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/download/20261008-2155/Dynamic-AK3-5.4.302-Dynamic-gf1e6db0-20261008-2155.zip)
+- [下载 KernelSU 系统服务修复模块（2.6.2-test）](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/download/20261008-2155/KernelSU-atfwd_seccomp_fix-2.6.2-test-20261008-2155.zip)
 
-本版修复 SM8350 大小核 CPU 特性一致性误判；模块包含 RTC 读取权限、默认关闭、状态提示及完整 ZIP 升级策略准备修复。模块在 KernelSU 管理器中单独安装，用于处理无法在本仓库内核源码中修复的系统服务问题；不会随 AK3 安装。新安装所有开关默认关闭，升级保留合法选择。适配范围、修复说明、校验值和已知问题见 Release 说明。
+本版将 ReSukiSU/KernelSU 内核侧更新到 BakaSU 35218 / UAPI 5，包含管理器扫描与 SELinux 的上游修复及重复 service 保护，保留 SM8350 大小核修复和既有平台兼容。须配套 35218 / UAPI 5 的管理器及 `ksud`；仅安装 APK 不等于运行服务已更新。统一修复模块 2.6.2-test 沿用上版功能，在管理器中单独安装，用于处理无法在本仓库内核源码中修复的系统服务问题；新安装全部关闭，升级保留合法选择。适配范围、安装与回滚、实机结果、校验值及已知问题见 [本版 Release 说明](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/tag/20261008-2155)。
 
 ## 项目用途
 
@@ -81,7 +81,7 @@ make O=<output-directory> ARCH=arm64 Image
 
 本次源码已完成 mars 的基础临时实机验证，包含启动、Root、UAPI 5 配套、原有修复模块加载和重复 service 保护；测试后恢复原运行环境。过程、已知问题和未测试范围见 [实机测试与回滚记录](work-records/2026-10-08-bakasu-35218-device-test.md)。
 
-管理器 APK 由用户自行安装，应与内核及 `ksud` 的 UAPI 配套。`rc3 / 35171` Release APK 仍使用 UAPI 4，不能作为本次 UAPI 5 更新的配套版本。页面上方的最新内核 Release 下载入口仍指向已经发布的版本，不代表本次源码更新已发布或完成实机验收。
+管理器 APK 由用户自行安装，应与内核及 `ksud` 的 UAPI 配套。`rc3 / 35171` Release APK 仍使用 UAPI 4，不能作为本次 UAPI 5 更新的配套版本。本次已完成基础临时实机验证并发布 `20261008-2155`；长期待机、完整定位、小米 11 Ultra 及永久安装等未测试范围仍按 Release 说明保留，不把临时测试当作完整验收。
 
 ## AK3 内核包规则
 
