@@ -50,6 +50,14 @@ allow system_suspend sysfs_rtc file read;
 
 模块备份应放在 KernelSU 活动模块目录之外；仅修改目录名为 `backup` 不会阻止其脚本执行。已有活动备份必须禁用并保留回滚记录，避免多份模块同时控制属性和服务。本版本没有改变策略加载顺序或权限范围。
 
+### 完整 ZIP 升级的策略准备（2.6.2-test）
+
+KernelSU 在替换升级目录后先加载 `sepolicy.rule`，再执行模块的 `post-fs-data.sh`。旧安装器只保留开关，没有把已开启的 TCM / RTC 规则准备到新目录；仅替换手机文件并保留旧策略的测试不能验证这条安装路径。
+
+本版在安装阶段保留合法开关后，按 TCM / RTC 选择生成上文既有的三条写入或三条读取规则，供首次重启加载；TCM 仍限定已适配 ROM。不复制任意旧策略，不新增权限，不即时修改当前 SELinux 策略。新安装、缺失或无效选择均为关闭，两项全关时不保留策略文件。其他服务控制与开关生效时间不变。
+
+完整 ZIP 安装后的开关、规则内容、首次重启实际权限与回滚需要单独验收；结果见工作记录和对应 Release 说明，不能用安装命令成功替代验证。
+
 ### GNSS 处理边界（2.3-test）
 
 当前 `loc_sys_service` 等待 `vendor.qti.gnss.ILocAidlGnss/default`，vendor 实际提供旧 HIDL 接口。此开关抑制无效请求，不补齐 AIDL，也不保证该辅助服务的所有厂商扩展功能可用。保留 `/vendor/bin/hw/android.hardware.gnss@2.1-service-qti`（`gnss_service`），仍须用户进行室外搜星、连续导航和重启后验收。
