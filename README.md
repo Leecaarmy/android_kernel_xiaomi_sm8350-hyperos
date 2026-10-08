@@ -79,6 +79,8 @@ make O=<output-directory> ARCH=arm64 Image
 
 本仓库保留源码直接集成、SELinux 5.4 状态锁、原有多管理器签名及 `KSU_SUKISU` 模块标识兼容。设备 defconfig、SUSFS 2.3.0、ReKernel-X、统一修复模块和 AK3 模板沿用既有配置。更新记录与验证边界见 [BakaSU 35218 同步记录](work-records/2026-10-08-bakasu-35218-update.md)。
 
+本次源码已完成 mars 的基础临时实机验证，包含启动、Root、UAPI 5 配套、原有修复模块加载和重复 service 保护；测试后恢复原运行环境。过程、已知问题和未测试范围见 [实机测试与回滚记录](work-records/2026-10-08-bakasu-35218-device-test.md)。
+
 管理器 APK 由用户自行安装，应与内核及 `ksud` 的 UAPI 配套。`rc3 / 35171` Release APK 仍使用 UAPI 4，不能作为本次 UAPI 5 更新的配套版本。页面上方的最新内核 Release 下载入口仍指向已经发布的版本，不代表本次源码更新已发布或完成实机验收。
 
 ## AK3 内核包规则
