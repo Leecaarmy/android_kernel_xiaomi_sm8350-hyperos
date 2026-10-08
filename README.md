@@ -67,11 +67,19 @@ make O=<output-directory> ARCH=arm64 Image
 - `drivers/input/touchscreen/fts_spi/` 等触控驱动，包含息屏手势和双击唤醒相关处理。
 - Android 17 capability、BPF、Tasks Trace RCU、`netbpfload` 和 `hrtimer` 兼容路径。
 - Xiaomi Binder hook、引用保护、IPv4/IPv6 网络事件和 UID 过滤。
-- ReKernel-X、ReSukiSU、SUSFS、KernelSU 等内核侧扩展；具体版本和来源以源码与发布说明为准。
+- ReKernel-X、BakaSU（原 ReSukiSU）、SUSFS、KernelSU 等内核侧扩展；具体版本和来源以源码与发布说明为准。
 - AW8697 振动驱动、RAM 固件延迟加载、波形序列和既有增益控制。
 - `schedutil`/WALT 调度、ZRAM `lz4p`、F2FS/EROFS、`seccomp`、BPF syscall/JIT 等配置能力。
 
 上述模块是源码中与当前设备功能和发布基线直接相关的部分，不代表本仓库只包含这些子系统。修改任何模块前，必须先按 `WORK_RULES.md` 完成只读分析和根因确认。
+
+### Root 组件源码版本
+
+`KernelSU/` 当前同步 [BakaSU 官方仓库](https://github.com/Baka-SU/BakaSU) 的 `main` 提交 `373303c525d05c8b47801305f506ef9124dbd6e6`，版本号为 `35218`，标签基线为 `v4.2.0-rc3`，UAPI 为 `5`。这是开发版源码；来源和版本元数据记录在 `KernelSU/resukisu-version`。
+
+本仓库保留源码直接集成、SELinux 5.4 状态锁、原有多管理器签名及 `KSU_SUKISU` 模块标识兼容。设备 defconfig、SUSFS 2.3.0、ReKernel-X、统一修复模块和 AK3 模板沿用既有配置。更新记录与验证边界见 [BakaSU 35218 同步记录](work-records/2026-10-08-bakasu-35218-update.md)。
+
+管理器 APK 由用户自行安装，应与内核及 `ksud` 的 UAPI 配套。`rc3 / 35171` Release APK 仍使用 UAPI 4，不能作为本次 UAPI 5 更新的配套版本。页面上方的最新内核 Release 下载入口仍指向已经发布的版本，不代表本次源码更新已发布或完成实机验收。
 
 ## AK3 内核包规则
 
