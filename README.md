@@ -8,12 +8,12 @@
 
 [下载最新 Release（AK3 内核包与统一修复模块）](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/latest)
 
-当前发布标签：`20261006-2324`；内核：`5.4.302-Dynamic-gb0773c7`。
+当前发布标签：`20261008-2011`；内核：`5.4.302-Dynamic-ga4f8add`。
 
-- [下载 AK3 内核包](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/download/20261006-2324/AK3-5.4.302-Dynamic-gb0773c7-20261006-2324.zip)
-- [下载 KernelSU 系统服务修复模块（2.5.0-test）](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/download/20261006-2324/KernelSU-atfwd_seccomp_fix-2.5.0-test-20261006-2324.zip)
+- [下载 AK3 内核包](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/download/20261008-2011/Dynamic-AK3-5.4.302-Dynamic-ga4f8add-20261008-2011.zip)
+- [下载 KernelSU 系统服务修复模块（2.6.2-test）](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/download/20261008-2011/KernelSU-atfwd_seccomp_fix-2.6.2-test-20261008-2011.zip)
 
-模块在 KernelSU 管理器中单独安装，用于处理无法在本仓库内核源码中修复的系统服务问题；不会随 AK3 安装。适配范围、开关生效时间、校验值和测试边界见 Release 说明；该模块版本不含尚未提交的 RTC 修复。
+本版修复 SM8350 大小核 CPU 特性一致性误判；模块包含 RTC 读取权限、默认关闭、状态提示及完整 ZIP 升级策略准备修复。模块在 KernelSU 管理器中单独安装，用于处理无法在本仓库内核源码中修复的系统服务问题；不会随 AK3 安装。新安装所有开关默认关闭，升级保留合法选择。适配范围、修复说明、校验值和已知问题见 Release 说明。
 
 ## 项目用途
 
