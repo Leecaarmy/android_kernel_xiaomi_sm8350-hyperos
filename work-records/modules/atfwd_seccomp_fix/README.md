@@ -9,7 +9,7 @@
 | ATFWD 服务修复 | vendor seccomp 策略只增加 `gettid: 1` | 挂载前移除本模块的策略覆盖，使用 ROM 原文件 | 下次开机；不自动重启 |
 | 性能追踪服务修复 | 删除 `traced.relay_producer_port`，保留本地 Unix Socket | 恢复 `/product/etc/build.prop` 中的原值 | 即时；必要时仅重启 traced |
 | GNSS 异常请求抑制 | 设置 `ro.gps.loc_sys_service.skip=1`，仅停止重复请求缺失 AIDL 接口的 `loc_sys_service` | 恢复当前开机原属性；仅恢复原来运行或被启动规则跳过的辅助服务 | 即时；开机早期只设置属性，后期补查服务 |
-| MiuiPasswords TCM Socket 修复 | 仅增加 3 个已确认调用域向现有 `vendor_dpmtcm_socket` 写入的 SELinux 规则 | 删除本模块生成的规则；不关闭 SELinux | 下次开机加载 |
+| TCM Socket 权限修复 | 原 3 个调用域的 Socket 写入权限；精确匹配 `.19` 时额外允许 `theme` 写入及连接 `vendor_dpmd` | 删除本模块生成的规则；不关闭 SELinux | 下次开机加载 |
 | `system_suspend` RTC 读取权限 | 允许 `system_suspend` 读取 `sysfs_rtc` 的 RTC 唤醒统计 | 删除本模块生成的读取规则；当前开机策略需重启后撤销 | 即时应用；下次开机持久化 |
 
 新安装 ATFWD、traced、GNSS、TCM、RTC 五个开关全部默认关闭；升级保留合法的已有选择，新增、缺失或无效的配置均按关闭处理。安装阶段移除关闭的 ATFWD 覆盖文件；traced 在从未启用过修复时不操作通道属性。开关保存于模块 `config` 目录，WebUI 区分选择与当前生效状态。
@@ -44,7 +44,7 @@ allow system_suspend sysfs_rtc file read;
 
 ### TCM / RTC 状态核对（2.6.1-test）
 
-第 4、5 项状态直接通过现有 SELinux `access` 查询接口核对当前权限：TCM 检查三个调用域的 `sock_file write`，RTC 检查 `getattr/open/read`。查询只计算权限结果，不加载或修改策略，不修改配置和开关；不再依赖可能因启动检查中断而未更新的旧开机记录。
+第 4、5 项状态直接通过现有 SELinux `access` 查询接口核对当前权限：TCM 检查三个原有调用域的 `sock_file write`，2.6.5-test 起在精确匹配 `.19` 时额外核对 `theme` 的 Socket 写入和连接权限；RTC 检查 `getattr/open/read`。查询只计算权限结果，不加载或修改策略，不修改配置和开关；不再依赖可能因启动检查中断而未更新的旧开机记录。
 
 检测成功且权限完整允许时显示“当前权限已生效”；权限缺失时区分规则已准备与未准备，已重启仍未生效则提示检查加载日志；接口、上下文或 root 权限检测失败时明确显示“无法核实”，不冒充待重启。关闭后仍允许的权限可能来自当前尚未撤销的策略、ROM 或其他模块，不能据此要求用户反复重启，也不能仅凭查询结果判断具体策略来源。
 
@@ -75,6 +75,23 @@ KernelSU 在替换升级目录后先加载 `sepolicy.rule`，再执行模块的 
 
 RTC 在本次实机后端开启成功，已通过 SELinux 权限查询核实；未确认独立的 RTC 脚本缺陷，因此不改变其权限或接口。TCM 保存开启后仍需下次开机核实实际权限，不能把开关保存成功等同于已加载。本次不自动重启，以保留正在运行的临时测试内核。
 
+### 主题管理器 TCM 权限补全（2.6.5-test）
+
+在 `mars / Android 17 / OS4.0.0.19.XKACNXM` 与对应精确 vendor 指纹组合上，`com.android.thememanager` 实际运行在 `theme` 域。修复前日志确认其 `TcmReceiver` 反复被拒绝写入 `/dev/socket/tcm`；权限查询也拒绝它连接服务端域为 `vendor_dpmd` 的 Socket。内核先检查路径 Socket 的写入，再检查服务端的 `connectto`，因此只补第一项不能完成连接权限检查。
+
+TCM 开关在该系统组合上额外生成两条固定规则，安装阶段与开机准备保持一致：
+
+```text
+allow theme vendor_dpmtcm_socket sock_file write;
+allow theme vendor_dpmd unix_stream_socket connectto;
+```
+
+`.26` 保留原三条规则。不开启新开关、不改变默认选择，不即时加载 TCM 策略。状态和开机规则检查同步覆盖新增项；规则所有权检查精确接受新旧 TCM 规则及各自与 RTC 的合法组合，保留升级迁移，同时拒绝覆盖未知策略。关闭第 4 项仍需下次开机撤销模块授权。
+
+授权以 SELinux 域为粒度，不能精确到包名；`connectto` 对应 `vendor_dpmd` 域的 Stream Socket，保留现有 Socket 文件标签和文件权限。原三域的状态只核对既有写入权限，不代表它们的完整 TCM 连接已验收。本次不扩大其他域权限。
+
+此版本已通过 140 项离线回归、实机升级后的首次开机加载和主题管理器自动启动及 120 秒稳定性检查，观察日志中的相关权限拒绝为 0。但 `/dev/socket/tcm` 在升级前后均未监听，主题客户端仍在 120 次后停止重试，不能声称端到端连接已修复或耗电改善。详见[主题管理器 TCM 修复验收记录](../../2026-10-18-tcm-theme-permissions.md)。
+
 ### 关闭开关时的日志建议（2.5.0-test）
 
 进入修复开关页、手动刷新或切换后，若有开关关闭，读取最近五分钟内最多 2000 条相关 logcat 记录，并读取内核日志快照，分别匹配 ATFWD 的 gettid/SIGSYS、traced 的指定 vsock 端点创建失败、GNSS 的缺失 AIDL 请求、TCM 的 `TcmReceiver`/`vendor_dpmtcm_socket` 拒绝。仅检查既定服务日志来源，排除 ADB 命令审计。
@@ -83,7 +100,7 @@ RTC 在本次实机后端开启成功，已通过 SELinux 权限查询核实；�
 
 - 仅使用现有 KernelSU 的 `resetprop` 和系统命令，不下载依赖。
 - 不刷写 boot、vendor、product、vbmeta，不修改内核或用户数据。
-- 不关闭 `persist.traced.enable`，不关闭 SELinux；TCM 只在用户启用独立开关后生成一条严格匹配的策略规则。
+- 不关闭 `persist.traced.enable`，不关闭 SELinux；TCM 只在用户启用独立开关后生成已列明的固定策略规则。
 - 不常驻监听，也不定时采集日志。模块操作记录仅保留最后 40 行。
 - ATFWD 策略保留原版权和英文接口，页面、说明、提示、新增注释使用中文。
 - ATFWD 原策略和修复策略按已验证的 SHA-256 检查；配置变化时跳过旧覆盖，需重新适配。
@@ -112,7 +129,7 @@ WebUI 随模块离线提供，使用 KernelSU 原生 root 桥接。普通浏览�
 - 仅撤销 traced：在 WebUI 关闭“性能追踪服务修复”。它会恢复 ROM 原配置，可能重新触发每 5 秒重启。
 - 仅撤销 ATFWD：关闭对应开关，用户自行重启后生效，可能重新触发 SIGSYS。
 - 仅撤销 GNSS：关闭“GNSS 异常请求抑制”；恢复当前开机原属性与辅助服务状态，缺失 AIDL 请求可能重新出现。
-- 仅撤销 TCM：关闭“MiuiPasswords TCM Socket 修复”并重启；下次开机不再加载本模块 TCM 规则，原拒绝日志可能重新出现。
+- 仅撤销 TCM：关闭“TCM Socket 权限修复”并重启；下次开机不再加载本模块 TCM 规则，原拒绝日志可能重新出现。
 - 仅撤销 RTC：关闭“system_suspend RTC 读取权限”并重启；当前开机已加载的允许项不会由模块伪造撤销，重启后恢复 ROM 原策略。
 - 撤销整个模块：在 KernelSU 禁用模块，用户自行重启后，原系统属性和 vendor 文件恢复。
 - 返回扩展前的版本：原备份包是文件快照，不是带完整安装校验的安装包；还原时需要同时恢复 `vendor_configs_file` 标签，并处理新增脚本和配置，不直接安装该快照包。

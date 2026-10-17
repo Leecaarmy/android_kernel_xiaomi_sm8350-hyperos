@@ -13,7 +13,7 @@ for feature in atfwd traced gnss tcm suspend; do
     fi
 done
 # KernelSU 先加载策略再执行开机脚本；安装阶段需按已保存的选择准备规则。
-# 只生成本模块既有权限，不复制旧策略，避免带入其他规则或默认启用修复。
+# 只生成本模块固定权限，不复制旧策略，避免带入其他规则或默认启用修复。
 policy_tmp="$MODPATH/sepolicy.rule.tmp"
 : > "$policy_tmp" || abort '初始化模块策略失败。'
 if [ "$(cat "$MODPATH/config/tcm_enabled")" = 1 ]; then
@@ -27,6 +27,12 @@ if [ "$(cat "$MODPATH/config/tcm_enabled")" = 1 ]; then
         'allow platform_app_36 vendor_dpmtcm_socket sock_file write;' \
         'allow bluetooth vendor_dpmtcm_socket sock_file write;' \
         'allow joyose_app vendor_dpmtcm_socket sock_file write;' >> "$policy_tmp" || abort '准备 TCM 策略失败。'
+    # 上方已核对成对指纹；主题管理器扩展只在 .19 验证，.26 保留原规则。
+    if [ "$(getprop ro.build.version.incremental)" = OS4.0.0.19.XKACNXM ]; then
+        printf '%s\n' \
+            'allow theme vendor_dpmtcm_socket sock_file write;' \
+            'allow theme vendor_dpmd unix_stream_socket connectto;' >> "$policy_tmp" || abort '准备主题管理器 TCM 策略失败。'
+    fi
 fi
 if [ "$(cat "$MODPATH/config/suspend_enabled")" = 1 ]; then
     printf '%s\n' \

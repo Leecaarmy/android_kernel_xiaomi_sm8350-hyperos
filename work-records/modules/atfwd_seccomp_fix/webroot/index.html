@@ -70,8 +70,8 @@
 
     <section class="card" aria-labelledby="tcm-title">
       <div class="card-heading"><span class="number">04</span><span class="timing">下次开机生效 · 默认关闭</span></div>
-      <h2 id="tcm-title">MiuiPasswords TCM Socket 修复</h2>
-      <p>只允许 MiuiPasswords 向现有 TCM Socket 写入，减少重复 SELinux 拒绝和 audit 日志洪泛；不关闭 SELinux。</p>
+      <h2 id="tcm-title">TCM Socket 权限修复</h2>
+      <p>允许已确认调用域访问现有 TCM Socket，减少重复权限拒绝；.19 额外覆盖主题管理器的写入和连接权限，不关闭 SELinux。</p>
       <label class="switch-row" for="tcm-toggle">
         <span>启用修复<small>保存规则，需重启后加载</small></span>
         <input id="tcm-toggle" type="checkbox" role="switch" disabled>

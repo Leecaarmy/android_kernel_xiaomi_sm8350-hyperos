@@ -17,6 +17,16 @@ TCM_RULE="$MODDIR/sepolicy.rule"
 TCM_RULE_TEXT='allow platform_app_36 vendor_dpmtcm_socket sock_file write;
 allow bluetooth vendor_dpmtcm_socket sock_file write;
 allow joyose_app vendor_dpmtcm_socket sock_file write;'
+TCM_LEGACY_RULE_TEXT="$TCM_RULE_TEXT"
+TCM_THEME_RULE_TEXT='allow theme vendor_dpmtcm_socket sock_file write;
+allow theme vendor_dpmd unix_stream_socket connectto;'
+TCM_EXTENDED_RULE_TEXT="$TCM_LEGACY_RULE_TEXT
+$TCM_THEME_RULE_TEXT"
+# 主题管理器的两道连接权限仅在此精确系统组合确认，.26 保留旧范围。
+tcm_theme_supported() {
+    [ "$(getprop ro.build.version.incremental):$(getprop ro.vendor.build.fingerprint)" = 'OS4.0.0.19.XKACNXM:Xiaomi/mars/mars:13/RKQ1.211001.001/OS4.0.0.19.XKACNXM:user/release-keys' ]
+}
+tcm_theme_supported && TCM_RULE_TEXT="$TCM_EXTENDED_RULE_TEXT"
 SUSPEND_RULE_TEXT='allow system_suspend sysfs_rtc file getattr;
 allow system_suspend sysfs_rtc file open;
 allow system_suspend sysfs_rtc file read;'
@@ -65,16 +75,28 @@ policy_active() (
     result=0
     case "$1" in
         tcm)
-            for domain in platform_app_36 bluetooth joyose_app; do
+            domains='platform_app_36 bluetooth joyose_app'
+            tcm_theme_supported && domains="$domains theme"
+            for domain in $domains; do
                 policy_access "u:r:$domain:s0" u:object_r:vendor_dpmtcm_socket:s0 sock_file write
                 case "$?" in 0) ;; 1) [ "$result" = 0 ] && result=1 ;; *) result=2 ;; esac
             done
+            if tcm_theme_supported; then
+                policy_access u:r:theme:s0 u:r:vendor_dpmd:s0 unix_stream_socket connectto
+                case "$?" in 0) ;; 1) [ "$result" = 0 ] && result=1 ;; *) result=2 ;; esac
+            fi
             exit "$result"
             ;;
         suspend) policy_access u:r:system_suspend:s0 u:object_r:sysfs_rtc:s0 file getattr open read ;;
         *) exit 2 ;;
     esac
 )
+tcm_rule_prepared() {
+    [ -f "$TCM_RULE" ] || return 1
+    printf '%s\n' "$TCM_RULE_TEXT" | while IFS= read -r rule; do
+        [ "$(grep -Fxc "$rule" "$TCM_RULE" 2>/dev/null)" = 1 ] || exit 1
+    done
+}
 guard() {
     [ "$(getprop ro.product.device)" = mars ] || fail '设备不在适配范围，未应用修复。'
     [ "$(getprop ro.build.version.release)" = 17 ] || fail 'Android 版本不在适配范围，未应用修复。'
@@ -105,7 +127,7 @@ status() {
     printf 'gnss_enabled=%s\ngnss_active=%s\ngnss_skip=%s\n' "$(flag gnss)" "$gnss_active" "$(getprop "$GNSS_SKIP")"
     printf 'gnss_aux_service=%s\ngnss_aux_pid=%s\ngnss_service=%s\ngnss_pid=%s\n' "$(getprop init.svc.loc_sys_service)" "$(getprop init.svc_debug_pid.loc_sys_service)" "$(getprop init.svc.gnss_service)" "$(getprop init.svc_debug_pid.gnss_service)"
     tcm_rule=0
-    [ -f "$TCM_RULE" ] && [ "$(grep -Fc 'allow platform_app_36 vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow bluetooth vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow joyose_app vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && tcm_rule=1
+    tcm_rule_prepared && tcm_rule=1
     # 启动脚本可能在服务未就绪时退出；旧开机标记不能证明当前权限状态。
     tcm_active=0; tcm_verified=1
     policy_active tcm
@@ -283,10 +305,13 @@ policy_expected() {
 policy_is_owned() {
     current=$1
     [ -z "$current" ] && return 0
-    [ "$current" = "$TCM_RULE_TEXT" ] && return 0
     [ "$current" = "$SUSPEND_RULE_TEXT" ] && return 0
-    [ "$current" = "$(printf '%s\n%s' "$TCM_RULE_TEXT" "$SUSPEND_RULE_TEXT")" ] && return 0
-    [ "$current" = "$(printf '%s\n%s' "$SUSPEND_RULE_TEXT" "$TCM_RULE_TEXT")" ] && return 0
+    # 精确接受新旧自有规则及 RTC 组合，避免升级时误拒旧版，也不接管未知策略。
+    for tcm in "$TCM_LEGACY_RULE_TEXT" "$TCM_EXTENDED_RULE_TEXT"; do
+        [ "$current" = "$tcm" ] && return 0
+        [ "$current" = "$(printf '%s\n%s' "$tcm" "$SUSPEND_RULE_TEXT")" ] && return 0
+        [ "$current" = "$(printf '%s\n%s' "$SUSPEND_RULE_TEXT" "$tcm")" ] && return 0
+    done
     return 1
 }
 
@@ -309,7 +334,7 @@ prepare_policy() {
 mark_policy_boot() {
     tcm_loaded=0
     suspend_loaded=0
-    [ -f "$TCM_RULE" ] && [ "$(grep -Fc 'allow platform_app_36 vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow bluetooth vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow joyose_app vendor_dpmtcm_socket sock_file write;' "$TCM_RULE" 2>/dev/null)" = 1 ] && tcm_loaded=1
+    tcm_rule_prepared && tcm_loaded=1
     [ -f "$TCM_RULE" ] && [ "$(grep -Fc 'allow system_suspend sysfs_rtc file getattr;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow system_suspend sysfs_rtc file open;' "$TCM_RULE" 2>/dev/null)" = 1 ] && [ "$(grep -Fc 'allow system_suspend sysfs_rtc file read;' "$TCM_RULE" 2>/dev/null)" = 1 ] && suspend_loaded=1
     save "$STATE/tcm_boot" "$(cat /proc/sys/kernel/random/boot_id)" || fail '保存 TCM 开机状态失败。'
     save "$STATE/tcm_loaded" "$tcm_loaded" || fail '保存 TCM 策略状态失败。'
