@@ -829,6 +829,8 @@ struct msm_drm_thread {
 	struct task_struct *thread;
 	unsigned int crtc_id;
 	struct kthread_worker worker;
+	/* 每个 worker 独占工作项，禁止跨 worker 复用。 */
+	struct kthread_work thread_priority_work;
 };
 
 struct msm_drm_private {
