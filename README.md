@@ -8,12 +8,7 @@
 
 [下载最新 Release（AK3 内核包与统一修复模块）](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/latest)
 
-当前发布标签：`20261016-0530`；内核：`5.4.302-Dynamic-gd8f86cc`。
-
-- [下载 AK3 内核包](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/download/20261016-0530/Dynamic-AK3-5.4.302-Dynamic-gd8f86cc-20261016-0530.zip)
-- [下载 KernelSU 系统服务修复模块（2.6.4-test）](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/download/20261016-0530/KernelSU-atfwd_seccomp_fix-2.6.4-test-20261016-0530.zip)
-
-本版补齐 ARM64/ARM32 的 `epoll_pwait2`，修复 Android 17 系统更新后的锁屏闪烁；统一修复模块 2.6.4-test 增加 `.19` 系统下 GNSS、TCM 的精确兼容判断。已在 mars / OS4.0.0.19.XKACNXM 临时启动最终 Image，通过 42 项接口、模块重启及 TCM/RTC 策略验收，用户确认锁屏、解锁、触控、相机和声音正常。沿用 BakaSU 35218 / UAPI 5，管理器和实际运行的 `ksud` 均需配套 UAPI 5。模块在管理器中单独安装，新安装全部关闭，升级保留合法选择。永久 AK3 写入、室外连续定位和完整续航未验收；挂起失败统计仍待分析。安装、回滚、哈希和验证边界见 [本版 Release 说明](https://github.com/Leecaarmy/android_kernel_xiaomi_sm8350-hyperos/releases/tag/20261016-0530)。
+此固定入口用于打开最新正式版本的下载页面，提供 AK3 内核包、统一修复模块及相关附件。具体版本、更新内容、适配范围、安装与回滚方式、SHA-256 和验证边界，以该页面的 Release 说明为准。
 
 ## 项目用途
 
