@@ -40,32 +40,29 @@ static const char *const power_supply_usbc_text[] = {
 	(u32)((((u32)(x)&0xff000000) >> 24) | (((u32)(x)&0x00ff0000) >> 8) |   \
 	      (((u32)(x)&0x0000ff00) << 8) | (((u32)(x)&0x000000ff) << 24))
 
-int StringToHex(char *str, unsigned char *out, unsigned int *outlen)
+static int StringToHex(const char *str, size_t len, u8 *out, size_t capacity)
 {
-	char *p = str;
-	char high = 0, low = 0;
-	int tmplen = strlen(p), cnt = 0;
-	tmplen = strlen(p);
-	while (cnt < (tmplen / 2)) {
-		high = ((*p > '9') && ((*p <= 'F') || (*p <= 'f'))) ?
-			       *p - 48 - 7 :
-			       *p - 48;
-		low = (*(++p) > '9' && ((*p <= 'F') || (*p <= 'f'))) ?
-			      *(p)-48 - 7 :
-			      *(p)-48;
-		out[cnt] = ((high & 0x0f) << 4 | (low & 0x0f));
-		p++;
-		cnt++;
+	size_t i;
+	int high, low;
+
+	if (!len || len > capacity * 2)
+		return -EINVAL;
+
+	for (i = 0; i < len; i++) {
+		if (hex_to_bin(str[i]) < 0)
+			return -EINVAL;
 	}
-	if (tmplen % 2 != 0)
-		out[cnt] = ((*p > '9') && ((*p <= 'F') || (*p <= 'f'))) ?
-				   *p - 48 - 7 :
-				   *p - 48;
 
-	if (outlen != NULL)
-		*outlen = tmplen / 2 + tmplen % 2;
+	for (i = 0; i + 1 < len; i += 2) {
+		high = hex_to_bin(str[i]);
+		low = hex_to_bin(str[i + 1]);
+		out[i / 2] = (high << 4) | low;
+	}
+	/* 保留标量命令末尾单个十六进制字符的低半字节语义。 */
+	if (len & 1)
+		out[len / 2] = hex_to_bin(str[len - 1]);
 
-	return tmplen / 2 + tmplen % 2;
+	return 0;
 }
 
 static int write_ss_auth_prop_id(struct battery_chg_dev *bcdev,
@@ -363,31 +360,24 @@ static ssize_t verify_digest_store(struct class *c,
 {
 	struct battery_chg_dev *bcdev =
 		container_of(c, struct battery_chg_dev, battery_class);
-	u8 random[BATTERY_DIGEST_LEN] = { 0 };
-	char kbuf[2 * BATTERY_DIGEST_LEN + 1] = { 0 };
-	u8 random_1s[BATTERY_DIGEST_LEN] = { 0 };
-	char kbuf_1s[70] = { 0 };
+	u8 random[BATTERY_DIGEST_LEN];
+	size_t len = count;
 	int rc;
-	int i;
 
-	if (bcdev->support_2s_charging) {
-		memset(kbuf, 0, sizeof(kbuf));
-		strlcpy(kbuf, buf, 2 * BATTERY_DIGEST_LEN + 1);
-		StringToHex(kbuf, random, &i);
-		pr_err("verify_digest_store  2s:%s \n", random);
-		rc = write_verify_digest_prop_id(bcdev,
-						 &bcdev->psy_list[PSY_TYPE_XM],
-						 XM_PROP_VERIFY_DIGEST, random);
-	} else {
-		memset(kbuf_1s, 0, sizeof(kbuf_1s));
-		strncpy(kbuf_1s, buf, count - 1);
-		StringToHex(kbuf_1s, random_1s, &i);
-		pr_err("verify_digest_store  1s:%s \n", random_1s);
-		rc = write_verify_digest_prop_id(bcdev,
-						 &bcdev->psy_list[PSY_TYPE_XM],
-						 XM_PROP_VERIFY_DIGEST,
-						 random_1s);
-	}
+	if (len && (buf[len - 1] == '\n' || buf[len - 1] == '\0'))
+		len--;
+	if (len != 2 * BATTERY_DIGEST_LEN)
+		return -EINVAL;
+	rc = StringToHex(buf, len, random, sizeof(random));
+	if (rc < 0)
+		return rc;
+
+	/* 摘要是定长二进制数据，不能作为 NUL 结尾的字符串打印。 */
+	pr_debug("digest input (%s)\n",
+		 bcdev->support_2s_charging ? "2s" : "1s");
+	rc = write_verify_digest_prop_id(bcdev,
+					 &bcdev->psy_list[PSY_TYPE_XM],
+					 XM_PROP_VERIFY_DIGEST, random);
 	if (rc < 0)
 		return rc;
 
@@ -2160,7 +2150,7 @@ static void usbpd_sha256_bitswap32(unsigned int *array, int len)
 	}
 }
 
-static void usbpd_request_vdm_cmd(struct battery_chg_dev *bcdev,
+static int usbpd_request_vdm_cmd(struct battery_chg_dev *bcdev,
 				  enum uvdm_state cmd, unsigned int *data)
 {
 	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_XM];
@@ -2207,9 +2197,8 @@ static void usbpd_request_vdm_cmd(struct battery_chg_dev *bcdev,
 		val = *data;
 		break;
 	default:
-		prop_id = XM_PROP_VDM_CMD_CHARGER_VERSION;
 		pr_info("cmd:%d is not support\n", cmd);
-		break;
+		return -EINVAL;
 	}
 
 	if (cmd == USBPD_UVDM_SESSION_SEED ||
@@ -2219,6 +2208,7 @@ static void usbpd_request_vdm_cmd(struct battery_chg_dev *bcdev,
 					   prop_id, data);
 	} else
 		rc = write_property_id(bcdev, pst, prop_id, val);
+	return rc;
 }
 
 static ssize_t request_vdm_cmd_store(struct class *c,
@@ -2227,17 +2217,58 @@ static ssize_t request_vdm_cmd_store(struct class *c,
 {
 	struct battery_chg_dev *bcdev =
 		container_of(c, struct battery_chg_dev, battery_class);
+	char buffer[2 * BATTERY_SS_AUTH_DATA_LEN * sizeof(u32) + 16];
+	u32 data[BATTERY_SS_AUTH_DATA_LEN] = { 0 };
+	char *payload, *command = buffer;
+	size_t len;
 	int cmd, ret;
-	unsigned char buffer[64];
-	unsigned char data[32];
-	int ccount;
 
-	ret = sscanf(buf, "%d,%s\n", &cmd, buffer);
+	if (!count || count >= sizeof(buffer))
+		return -EINVAL;
+	len = count;
+	if (buf[len - 1] == '\0')
+		len--;
+	memcpy(buffer, buf, len);
+	buffer[len] = '\0';
+	if (memchr(buffer, '\0', len))
+		return -EINVAL;
+	payload = strchr(buffer, ',');
+	if (!payload)
+		return -EINVAL;
+	*payload++ = '\0';
+	ret = kstrtoint(command, 10, &cmd);
+	if (ret < 0)
+		return ret;
+	len = strlen(payload);
+	if (len && payload[len - 1] == '\n')
+		len--;
 
-	pr_info("%s:buf:%s cmd:%d, buffer:%s\n", __func__, buf, cmd, buffer);
-
-	StringToHex(buffer, data, &ccount);
-	usbpd_request_vdm_cmd(bcdev, cmd, (unsigned int *)data);
+	switch (cmd) {
+	case USBPD_UVDM_SESSION_SEED:
+	case USBPD_UVDM_AUTHENTICATION:
+#if !defined(CONFIG_VENUS_FOR_BUILD)
+	case USBPD_UVDM_REVERSE_AUTHEN:
+#endif
+		if (len != 2 * sizeof(data))
+			return -EINVAL;
+		break;
+	case USBPD_UVDM_CHARGER_VERSION:
+	case USBPD_UVDM_CHARGER_VOLTAGE:
+	case USBPD_UVDM_CHARGER_TEMP:
+	case USBPD_UVDM_REMOVE_COMPENSATION:
+	case USBPD_UVDM_VERIFIED:
+		if (len > 2 * sizeof(data[0]))
+			return -EINVAL;
+		break;
+	default:
+		return -EINVAL;
+	}
+	ret = StringToHex(payload, len, (u8 *)data, sizeof(data));
+	if (ret < 0)
+		return ret;
+	ret = usbpd_request_vdm_cmd(bcdev, cmd, data);
+	if (ret < 0)
+		return ret;
 	return count;
 }
 
