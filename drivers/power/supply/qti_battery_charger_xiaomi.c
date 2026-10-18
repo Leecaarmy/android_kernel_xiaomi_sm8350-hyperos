@@ -2221,6 +2221,7 @@ static ssize_t request_vdm_cmd_store(struct class *c,
 	u32 data[BATTERY_SS_AUTH_DATA_LEN] = { 0 };
 	char *payload, *command = buffer;
 	size_t len;
+	bool query_placeholder = false;
 	int cmd, ret;
 
 	if (!count || count >= sizeof(buffer))
@@ -2255,6 +2256,9 @@ static ssize_t request_vdm_cmd_store(struct class *c,
 	case USBPD_UVDM_CHARGER_VERSION:
 	case USBPD_UVDM_CHARGER_VOLTAGE:
 	case USBPD_UVDM_CHARGER_TEMP:
+		/* 厂商查询命令使用 null 占位符，不携带数据。 */
+		query_placeholder = len == 4 && !memcmp(payload, "null", 4);
+		fallthrough;
 	case USBPD_UVDM_REMOVE_COMPENSATION:
 	case USBPD_UVDM_VERIFIED:
 		if (len > 2 * sizeof(data[0]))
@@ -2263,9 +2267,11 @@ static ssize_t request_vdm_cmd_store(struct class *c,
 	default:
 		return -EINVAL;
 	}
-	ret = StringToHex(payload, len, (u8 *)data, sizeof(data));
-	if (ret < 0)
-		return ret;
+	if (!query_placeholder) {
+		ret = StringToHex(payload, len, (u8 *)data, sizeof(data));
+		if (ret < 0)
+			return ret;
+	}
 	ret = usbpd_request_vdm_cmd(bcdev, cmd, data);
 	if (ret < 0)
 		return ret;
