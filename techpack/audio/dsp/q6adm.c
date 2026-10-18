@@ -1213,6 +1213,13 @@ int adm_set_pp_params(int port_id, int copp_idx,
 	ret = adm_apr_send_pkt((uint32_t *) adm_set_params,
 			&this_adm.copp.wait[port_idx][copp_idx],
 			port_idx, copp_idx, adm_set_params->apr_hdr.opcode);
+	/* 仅补充失败上下文，不改写请求、校准数据或返回结果。 */
+	if (ret < 0)
+		pr_err_ratelimited("%s: set_pp failed port=0x%x copp=%d topology=0x%x opcode=0x%x inband=%d bytes=%u ret=%d caller=%pS\n",
+			__func__, port_id, copp_idx,
+			atomic_read(&this_adm.copp.topology[port_idx][copp_idx]),
+			adm_set_params->apr_hdr.opcode, param_data != NULL,
+			param_size, ret, (void *)_RET_IP_);
 done:
 	kfree(adm_set_params);
 	return ret;
@@ -1242,8 +1249,9 @@ int adm_pack_and_set_one_pp_param(int port_id, int copp_idx,
 	ret = adm_set_pp_params(port_id, copp_idx, NULL, packed_data,
 				total_size);
 	if (ret)
-		pr_err("%s: Failed to set parameter data, error %d\n", __func__,
-		       ret);
+		pr_err("%s: Failed to set parameter data, error %d module=0x%x instance=%u param=0x%x bytes=%u\n",
+		       __func__, ret, param_hdr.module_id, param_hdr.instance_id,
+		       param_hdr.param_id, param_hdr.param_size);
 done:
 	kfree(packed_data);
 	return ret;

@@ -1083,7 +1083,9 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		msm_adsp_init_mixer_ctl_pp_event_queue(soc_prtd);
-		msm_adsp_init_mixer_ctl_adm_pp_event_queue(soc_prtd);
+		/* 仅为提供 COPP 回调控件的音频路由初始化可选队列。 */
+		if (snd_soc_card_get_kcontrol(soc_prtd->card, DSP_ADM_CALLBACK))
+			msm_adsp_init_mixer_ctl_adm_pp_event_queue(soc_prtd);
 	}
 
 	/* Vote to update the Rx thread priority to RT Thread for playback */
@@ -1268,7 +1270,8 @@ static int msm_pcm_playback_close(struct snd_pcm_substream *substream)
 	msm_pcm_routing_dereg_phy_stream(soc_prtd->dai_link->id,
 						SNDRV_PCM_STREAM_PLAYBACK);
 	msm_adsp_clean_mixer_ctl_pp_event_queue(soc_prtd);
-	msm_adsp_clean_mixer_ctl_adm_pp_event_queue(soc_prtd);
+	if (snd_soc_card_get_kcontrol(soc_prtd->card, DSP_ADM_CALLBACK))
+		msm_adsp_clean_mixer_ctl_adm_pp_event_queue(soc_prtd);
 	kfree(prtd);
 	runtime->private_data = NULL;
 	mutex_unlock(&pdata->lock);
