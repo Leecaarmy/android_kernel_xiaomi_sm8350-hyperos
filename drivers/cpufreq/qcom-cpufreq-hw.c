@@ -693,18 +693,23 @@ static int qcom_cpufreq_hw_driver_probe(struct platform_device *pdev)
 		return rc;
 	}
 
-	rc = cpufreq_register_driver(&cpufreq_qcom_hw_driver);
-	if (rc) {
-		dev_err(&pdev->dev, "CPUFreq HW driver failed to register\n");
-		return rc;
-	}
-
 	for_each_possible_cpu(cpu)
 		spin_lock_init(&qcom_cpufreq_counter[cpu].lock);
 
+	/*
+	 * WALT 在启动早期注册频率过渡通知器。先注册周期计数回调，
+	 * 让 WALT 在 cpufreq_register_driver() 初始化 schedutil 策略前注销通知器，
+	 * 否则 cpufreq core 会拒绝 fast-switch，schedutil 会创建 sugov 线程。
+	 */
 	rc = register_cpu_cycle_counter_cb(&cycle_counter_cb);
 	if (rc) {
 		dev_err(&pdev->dev, "cycle counter cb failed to register\n");
+		return rc;
+	}
+
+	rc = cpufreq_register_driver(&cpufreq_qcom_hw_driver);
+	if (rc) {
+		dev_err(&pdev->dev, "CPUFreq HW driver failed to register\n");
 		return rc;
 	}
 
